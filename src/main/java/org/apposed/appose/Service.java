@@ -66,6 +66,13 @@ public class Service implements AutoCloseable {
 
 	private Consumer<String> debugListener;
 
+	/**
+	 * List of weird lines seen since the last valid response from the worker.
+	 * In case the worker process crashes, we use these lines as the content
+	 * of an error message to any still pending tasks when reporting the crash.
+	 */
+	private List<String> crashLines = new ArrayList<>();
+
 	public Service(File cwd, String... args) {
 		this.cwd = cwd;
 		this.args = args.clone();
@@ -168,12 +175,18 @@ public class Service implements AutoCloseable {
 					debugService("No such task: " + uuid);
 					continue;
 				}
+				synchronized (crashLines) {
+					crashLines.clear();
+				}
 				task.handle(response);
 			}
 			catch (Exception exc) {
 				// Something went wrong decoding the line of JSON.
 				// Skip it and keep going, but log it first.
 				debugService(String.format("<INVALID> %s", line));
+				synchronized (crashLines) {
+					crashLines.add(line);
+				}
 			}
 		}
 	}
@@ -189,6 +202,9 @@ public class Service implements AutoCloseable {
 					return;
 				}
 				debugWorker(line);
+				synchronized (crashLines) {
+					crashLines.add(line);
+				}
 			}
 		}
 		catch (IOException exc) {
@@ -206,6 +222,13 @@ public class Service implements AutoCloseable {
 				debugService(Types.stackTrace(exc));
 			}
 		}
+		try {
+			stdoutThread.join();
+			stderrThread.join();
+		}
+		catch (InterruptedException exc) {
+			debugService(Types.stackTrace(exc));
+		}
 
 		// Do some sanity checks.
 		int exitCode = process.exitValue();
@@ -214,7 +237,8 @@ public class Service implements AutoCloseable {
 		if (taskCount > 0) debugService("<worker process terminated with " + taskCount + " pending tasks>");
 
 		// Notify any remaining tasks about the process crash.
-		tasks.values().forEach(Task::crash);
+		String error = String.join("\n", crashLines);
+		tasks.values().forEach(task -> task.crash(error));
 		tasks.clear();
 	}
 
@@ -377,9 +401,10 @@ public class Service implements AutoCloseable {
 			}
 		}
 
-		private void crash() {
+		private void crash(String error) {
 			TaskEvent event = new TaskEvent(this, ResponseType.CRASH);
 			status = TaskStatus.CRASHED;
+			this.error = error;
 			listeners.forEach(l -> l.accept(event));
 			synchronized (this) {
 				notifyAll();

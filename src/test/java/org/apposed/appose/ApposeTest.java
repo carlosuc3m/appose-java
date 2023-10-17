@@ -101,6 +101,21 @@ public class ApposeTest {
 		}
 	}
 
+	@Test
+	public void testCrashPython() throws IOException {
+		Environment env = Appose.system();
+		try (Service service = env.python()) {
+			Task task = service.task("import sys; print('Whee!'); sys.exit(1337)");
+			String[] crashError = {null};
+			task.listen(event -> {
+				if (event.responseType == ResponseType.CRASH) {
+					crashError[0] = task.error;
+				}
+			});
+			assertEquals("Whee!", crashError[0]);
+		}
+	}
+
 	public void executeAndAssert(Service service, String script)
 		throws InterruptedException, IOException
 	{
@@ -130,6 +145,7 @@ public class ApposeTest {
 		task.waitFor();
 
 		// Validate the execution result.
+		assertNull(task.error);
 		assertSame(TaskStatus.COMPLETE, task.status);
 		Number result = (Number) task.outputs.get("result");
 		assertEquals(91, result.intValue());
