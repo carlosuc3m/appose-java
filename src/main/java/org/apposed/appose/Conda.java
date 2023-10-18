@@ -24,7 +24,9 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
-package org.apposed.appose.conda;
+package org.apposed.appose;
+
+import org.apache.commons.lang3.SystemUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -40,37 +42,33 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang3.SystemUtils;
-import org.apposed.appose.conda.CondaException.EnvironmentExistsException;
-
 /**
- * Conda wrapper.
+ * Conda environment manager, implemented by delegating to micromamba.
  * 
  * @author Ko Sugawara
+ * @author Curtis Rueden
  */
-public class Conda
-{
+public class Conda {
 
 	private final static int TIMEOUT_MILLIS = 10 * 1000;
 
-	private final static String DOWNLOAD_URL_LINUX = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh";
+	private final static String MICROMAMBA_URL =
+		"https://micro.mamba.pm/api/micromamba/" + microMambaPlatform() + "/latest";
 
-	private final static String DOWNLOAD_URL_MAC = "https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh";
-
-	private final static String DOWNLOAD_URL_MAC_M1 = "https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh";
-
-	private final static String DOWNLOAD_URL_WIN = "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe";
-
-	public final static String DEFAULT_ENVIRONMENT_NAME = "base";
-
-	private final String rootdir;
-
-	private String envName = DEFAULT_ENVIRONMENT_NAME;
-
-	final String condaCommand = SystemUtils.IS_OS_WINDOWS ? "condabin\\conda.bat" : "condabin/conda";
-
-	final String pythonCommand = SystemUtils.IS_OS_WINDOWS ? "python.exe" : "bin/python";
+	private static String microMambaPlatform() {
+		String osName = System.getProperty("os.name");
+		if (osName.startsWith("Windows")) osName = "Windows";
+		String osArch = System.getProperty("os.arch");
+		switch (osName + "|" + osArch) {
+			case "Linux|amd64":      return "linux-64";
+			case "Linux|aarch64":    return "linux-aarch64";
+			case "Linux|ppc64le":    return "linux-ppc64le";
+			case "Mac OS X|x86_64":  return "osx-64";
+			case "Mac OS X|aarch64": return "osx-arm64";
+			case "Windows|amd64":    return "win-64";
+			default:                 return null;
+		}
+	}
 
 	/**
 	 * Returns a {@link ProcessBuilder} with the working directory specified in the
@@ -88,22 +86,6 @@ public class Conda
 		if ( isInheritIO )
 			builder.inheritIO();
 		return builder;
-	}
-
-	/**
-	 * Returns {@code \{"cmd.exe", "/c"\}} for Windows and an empty list for
-	 * Mac/Linux.
-	 * 
-	 * @return {@code \{"cmd.exe", "/c"\}} for Windows and an empty list for
-	 *         Mac/Linux.
-	 * @throws IOException
-	 */
-	private List< String > getBaseCommand()
-	{
-		final List< String > cmd = new ArrayList<>();
-		if ( SystemUtils.IS_OS_WINDOWS )
-			cmd.addAll( Arrays.asList( "cmd.exe", "/c" ) );
-		return cmd;
 	}
 
 	/**

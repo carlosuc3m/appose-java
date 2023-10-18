@@ -29,8 +29,6 @@
 
 package org.apposed.appose;
 
-import org.apposed.appose.conda.Conda;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
